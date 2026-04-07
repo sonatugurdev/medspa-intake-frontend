@@ -36,75 +36,126 @@ export default function PhotoScreen({ photo, setPhoto }) {
   const fileInputRef = useRef(null)
 
   // Load the MakeupAR JS Camera Kit SDK
+  //
+  // Timing race: the SDK script calls window.ymkAsyncInit on load,
+  // but React's useEffect runs after paint. The SDK may execute before
+  // or after this effect. We handle both cases.
   useEffect(() => {
-    // Define the async init callback before loading script
-    window.ymkAsyncInit = function () {
+    let mounted = true
+
+    function setupEventListeners() {
+      if (!window.YMK || !mounted) return
+      console.log('[CameraKit] Setting up event listeners')
+
       window.YMK.addEventListener('loaded', function () {
-        console.log('[CameraKit] SDK loaded and ready')
-        setSdkLoaded(true)
+        console.log('[CameraKit] loaded event fired')
+        if (mounted) setSdkLoaded(true)
       })
 
       window.YMK.addEventListener('faceQualityChanged', function (q) {
-        setQualityStatus(q)
+        if (mounted) setQualityStatus(q)
       })
 
       window.YMK.addEventListener('faceDetectionCaptured', function (result) {
-        console.log('[CameraKit] Photo captured:', result.images?.length, 'images')
-        if (result.images && result.images.length > 0) {
-          const img = result.images[0]
-          let dataUrl
+        console.log('[CameraKit] Captured:', result.images?.length, 'images')
+        if (!mounted || !result.images || result.images.length === 0) return
 
-          if (typeof img.image === 'string') {
-            // base64 string — may or may not have data URL prefix
-            dataUrl = img.image.startsWith('data:')
-              ? img.image
-              : `data:image/jpeg;base64,${img.image}`
-          } else {
-            // Blob — convert to data URL
-            const reader = new FileReader()
-            reader.onload = () => {
-              setCapturedImage(reader.result)
-              setPhoto(reader.result)
-              setCameraOpen(false)
-              window.YMK.close()
-            }
-            reader.readAsDataURL(img.image)
-            return
-          }
+        const img = result.images[0]
 
+        if (typeof img.image === 'string') {
+          const dataUrl = img.image.startsWith('data:')
+            ? img.image
+            : `data:image/jpeg;base64,${img.image}`
           setCapturedImage(dataUrl)
           setPhoto(dataUrl)
-          setCameraOpen(false)
-          window.YMK.close()
+        } else {
+          const reader = new FileReader()
+          reader.onload = () => {
+            if (!mounted) return
+            setCapturedImage(reader.result)
+            setPhoto(reader.result)
+            setCameraOpen(false)
+            try { window.YMK.close() } catch (e) { /* */ }
+          }
+          reader.readAsDataURL(img.image)
+          return
         }
+
+        setCameraOpen(false)
+        try { window.YMK.close() } catch (e) { /* */ }
       })
 
       window.YMK.addEventListener('cameraFailed', function (error) {
         console.error('[CameraKit] Camera failed:', error)
-        setSdkError(`Camera access failed: ${error}`)
-        setCameraOpen(false)
+        if (mounted) {
+          setSdkError(`Camera access failed: ${error}`)
+          setCameraOpen(false)
+        }
       })
 
       window.YMK.addEventListener('closed', function () {
-        setCameraOpen(false)
+        if (mounted) setCameraOpen(false)
       })
+
+      // SDK might already be loaded — the 'loaded' event won't fire again
+      try {
+        if (window.YMK.isLoaded && window.YMK.isLoaded()) {
+          console.log('[CameraKit] Already loaded')
+          if (mounted) setSdkLoaded(true)
+        }
+      } catch (e) { /* isLoaded may not exist yet */ }
+
+      // Fallback: if loaded event was missed, enable after 2s
+      setTimeout(() => {
+        if (mounted && window.YMK) {
+          console.log('[CameraKit] Timeout fallback — enabling')
+          setSdkLoaded(true)
+        }
+      }, 2000)
     }
 
-    // Load SDK script
-    const script = document.createElement('script')
-    script.type = 'text/javascript'
-    script.async = true
-    script.src = 'https://plugins-media.makeupar.com/v2.2-camera-kit/sdk.js'
-    script.onerror = () => {
-      console.error('[CameraKit] Failed to load SDK')
-      setSdkError('Camera Kit SDK failed to load. You can upload a photo instead.')
+    // Set the callback the SDK looks for (covers case: SDK loads after this)
+    window.ymkAsyncInit = function () {
+      console.log('[CameraKit] ymkAsyncInit called by SDK')
+      setupEventListeners()
     }
-    document.head.appendChild(script)
+
+    // If YMK already exists (SDK loaded before this effect), set up now
+    if (window.YMK) {
+      console.log('[CameraKit] YMK already available')
+      setupEventListeners()
+    }
+
+    // Load the script (skip if already in DOM from a previous mount)
+    if (!document.querySelector('script[src*="makeupar.com"]')) {
+      const script = document.createElement('script')
+      script.type = 'text/javascript'
+      script.async = true
+      script.src = 'https://plugins-media.makeupar.com/v2.2-camera-kit/sdk.js'
+      script.onload = () => {
+        console.log('[CameraKit] script onload fired')
+        // Give SDK a moment to init and call ymkAsyncInit
+        setTimeout(() => {
+          if (mounted && window.YMK) setupEventListeners()
+        }, 500)
+      }
+      script.onerror = () => {
+        console.error('[CameraKit] Script failed to load')
+        if (mounted) setSdkError('Camera Kit failed to load. You can upload a photo instead.')
+      }
+      document.head.appendChild(script)
+    } else {
+      // Script tag exists from previous mount — SDK should be available
+      console.log('[CameraKit] Script already in DOM')
+      setTimeout(() => {
+        if (mounted && window.YMK) setupEventListeners()
+      }, 300)
+    }
 
     return () => {
-      // Cleanup
+      mounted = false
       if (window.YMK && typeof window.YMK.close === 'function') {
-        try { window.YMK.close() } catch (e) { /* ignore */ }
+        try { window.YMK.close() } catch (e) { /* */ }
       }
     }
   }, [])
