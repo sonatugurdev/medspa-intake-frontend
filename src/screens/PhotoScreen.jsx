@@ -166,10 +166,19 @@ export default function PhotoScreen({ photo, setPhoto }) {
       return
     }
 
+    // Size the camera module to fit the iPhone viewport
+    // Leave room for the tips banner above and button below
+    const vw = Math.min(window.innerWidth, 430)
+    const vh = window.innerHeight
+    const camWidth = Math.min(vw - 40, 340)   // 20px padding each side
+    const camHeight = Math.min(vh - 280, 440)  // room for header, tips, button
+
     window.YMK.init({
       faceDetectionMode: 'hdskincare',
       imageFormat: 'base64',
       language: 'enu',
+      width: camWidth,
+      height: camHeight,
     })
     window.YMK.openCameraKit()
     setCameraOpen(true)
