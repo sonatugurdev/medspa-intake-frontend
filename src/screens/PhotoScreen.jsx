@@ -1,184 +1,337 @@
-import { useState } from 'react'
-import { theme, PHOTO_STEPS } from '../utils/constants'
-import { PrimaryButton } from '../components/UI'
-import { useCamera } from '../hooks/useCamera'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
-export default function PhotoScreen({ photos, setPhoto, clearPhoto }) {
-  const [currentIdx, setCurrentIdx] = useState(
-    !photos.frontal ? 0 : !photos.left ? 1 : !photos.right ? 2 : 2
-  )
-  const camera = useCamera()
+const theme = {
+  primary: '#3B8B8A',
+  primaryLight: '#5BA8A7',
+  text: '#2D2A2E',
+  textLight: '#6B6970',
+  textMuted: '#9B99A1',
+  background: '#FFF8F2',
+  surface: '#FFFFFF',
+  border: '#E8E5E0',
+  success: '#2D8B4E',
+  accent: '#D4930D',
+  error: '#C43E3E',
+}
 
-  const step = PHOTO_STEPS[currentIdx]
-  const allDone = photos.frontal && photos.left && photos.right
+/**
+ * PhotoScreen — uses MakeupAR JS Camera Kit for guided HD skincare capture.
+ *
+ * The Camera Kit handles:
+ * - Camera permission requests
+ * - Real-time face detection
+ * - Face quality validation (lighting, pose, distance)
+ * - Automatic capture when conditions pass
+ * - Returns a high-res base64 image
+ *
+ * Fallback: if Camera Kit fails to load (e.g., unsupported browser),
+ * falls back to a simple file input for photo upload.
+ */
+export default function PhotoScreen({ photo, setPhoto }) {
+  const [sdkLoaded, setSdkLoaded] = useState(false)
+  const [sdkError, setSdkError] = useState(null)
+  const [cameraOpen, setCameraOpen] = useState(false)
+  const [capturedImage, setCapturedImage] = useState(photo || null)
+  const [qualityStatus, setQualityStatus] = useState(null)
+  const fileInputRef = useRef(null)
 
-  const handleCapture = async () => {
-    const dataUrl = await camera.capture()
-    if (dataUrl) {
-      setPhoto(step.id, dataUrl)
+  // Load the MakeupAR JS Camera Kit SDK
+  useEffect(() => {
+    // Define the async init callback before loading script
+    window.ymkAsyncInit = function () {
+      window.YMK.addEventListener('loaded', function () {
+        console.log('[CameraKit] SDK loaded and ready')
+        setSdkLoaded(true)
+      })
+
+      window.YMK.addEventListener('faceQualityChanged', function (q) {
+        setQualityStatus(q)
+      })
+
+      window.YMK.addEventListener('faceDetectionCaptured', function (result) {
+        console.log('[CameraKit] Photo captured:', result.images?.length, 'images')
+        if (result.images && result.images.length > 0) {
+          const img = result.images[0]
+          let dataUrl
+
+          if (typeof img.image === 'string') {
+            // base64 string — may or may not have data URL prefix
+            dataUrl = img.image.startsWith('data:')
+              ? img.image
+              : `data:image/jpeg;base64,${img.image}`
+          } else {
+            // Blob — convert to data URL
+            const reader = new FileReader()
+            reader.onload = () => {
+              setCapturedImage(reader.result)
+              setPhoto(reader.result)
+              setCameraOpen(false)
+              window.YMK.close()
+            }
+            reader.readAsDataURL(img.image)
+            return
+          }
+
+          setCapturedImage(dataUrl)
+          setPhoto(dataUrl)
+          setCameraOpen(false)
+          window.YMK.close()
+        }
+      })
+
+      window.YMK.addEventListener('cameraFailed', function (error) {
+        console.error('[CameraKit] Camera failed:', error)
+        setSdkError(`Camera access failed: ${error}`)
+        setCameraOpen(false)
+      })
+
+      window.YMK.addEventListener('closed', function () {
+        setCameraOpen(false)
+      })
     }
-  }
 
-  const handleRetake = () => {
-    clearPhoto(step.id)
-    camera.stop()
-  }
-
-  const handleNext = () => {
-    if (currentIdx < 2) setCurrentIdx(currentIdx + 1)
-  }
-
-  const handleOpenCamera = async () => {
-    const success = await camera.start()
-    if (!success) {
-      alert('Camera access is needed for skin analysis. Please allow camera access in your browser settings and try again.')
+    // Load SDK script
+    const script = document.createElement('script')
+    script.type = 'text/javascript'
+    script.async = true
+    script.src = 'https://plugins-media.makeupar.com/v2.2-camera-kit/sdk.js'
+    script.onerror = () => {
+      console.error('[CameraKit] Failed to load SDK')
+      setSdkError('Camera Kit SDK failed to load. You can upload a photo instead.')
     }
-  }
+    document.head.appendChild(script)
+
+    return () => {
+      // Cleanup
+      if (window.YMK && typeof window.YMK.close === 'function') {
+        try { window.YMK.close() } catch (e) { /* ignore */ }
+      }
+    }
+  }, [])
+
+  const openCamera = useCallback(() => {
+    if (!window.YMK) {
+      setSdkError('Camera Kit not available')
+      return
+    }
+
+    window.YMK.init({
+      faceDetectionMode: 'hdskincare',
+      imageFormat: 'base64',
+      language: 'enu',
+    })
+    window.YMK.openCameraKit()
+    setCameraOpen(true)
+    setQualityStatus(null)
+  }, [])
+
+  const handleFileUpload = useCallback((e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      setCapturedImage(reader.result)
+      setPhoto(reader.result)
+    }
+    reader.readAsDataURL(file)
+  }, [setPhoto])
+
+  const retake = useCallback(() => {
+    setCapturedImage(null)
+    setPhoto(null)
+    setQualityStatus(null)
+  }, [setPhoto])
 
   return (
-    <div className="slide-in">
-      <h2 style={{ fontSize: 26, fontWeight: 700, color: theme.secondary, marginBottom: 8 }}>
-        Capture Your Photos
+    <div style={{ padding: '0 20px' }}>
+      <h2 style={{
+        fontSize: 22, fontWeight: 700, color: theme.text,
+        marginBottom: 8,
+      }}>
+        Capture Your Photo
       </h2>
-      <p style={{ fontSize: 15, color: theme.textLight, marginBottom: 24, lineHeight: 1.5 }}>
-        3 quick photos for a complete analysis. Good lighting makes a big difference!
+      <p style={{
+        fontSize: 14, color: theme.textLight, lineHeight: 1.5,
+        marginBottom: 24,
+      }}>
+        One clear frontal photo is all we need. The camera will guide you for the best result.
       </p>
 
-      {/* Progress indicators */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
-        {PHOTO_STEPS.map((ps, i) => (
-          <div
-            key={ps.id}
-            onClick={() => {
-              if (photos[ps.id]) {
-                camera.stop()
-                setCurrentIdx(i)
-              }
-            }}
-            style={{
-              flex: 1, padding: '12px 8px', borderRadius: 10, textAlign: 'center',
-              border: `2px solid ${photos[ps.id] ? theme.success : i === currentIdx ? theme.primary : theme.border}`,
-              background: photos[ps.id] ? `${theme.success}08` : i === currentIdx ? `${theme.primary}08` : theme.surface,
-              cursor: photos[ps.id] ? 'pointer' : 'default',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <div style={{ fontSize: 20 }}>{photos[ps.id] ? '✅' : ps.icon}</div>
-            <div style={{
-              fontSize: 12, fontWeight: 600, marginTop: 4,
-              color: photos[ps.id] ? theme.success : theme.text,
-            }}>
-              {ps.label}
-            </div>
-          </div>
-        ))}
+      {/* Tips */}
+      <div style={{
+        background: `${theme.primary}08`,
+        borderRadius: 12, padding: 16, marginBottom: 24,
+        borderLeft: `4px solid ${theme.primary}`,
+      }}>
+        <div style={{
+          fontSize: 12, fontWeight: 700, color: theme.primary,
+          textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8,
+        }}>
+          For best results
+        </div>
+        <div style={{ fontSize: 13, color: theme.textLight, lineHeight: 1.6 }}>
+          Remove glasses and pull hair back from your forehead. Good, even lighting helps — avoid harsh shadows or backlight. No makeup gives the most accurate analysis.
+        </div>
       </div>
 
-      {!allDone && (
-        <>
-          {/* Camera / Preview Area */}
+      {/* Camera Kit mount point (required by SDK) */}
+      <div id="YMK-module" style={{ display: cameraOpen ? 'block' : 'none' }} />
+
+      {/* Main content area */}
+      {capturedImage ? (
+        // Show captured photo
+        <div style={{ textAlign: 'center' }}>
           <div style={{
-            width: '100%', aspectRatio: '3/4', borderRadius: 16, overflow: 'hidden',
-            background: '#1a1a1a', position: 'relative', marginBottom: 16,
+            width: '100%', maxWidth: 360, margin: '0 auto',
+            borderRadius: 16, overflow: 'hidden',
+            border: `3px solid ${theme.success}`,
+            position: 'relative',
           }}>
-            {camera.active ? (
-              <>
-                <video
-                  ref={camera.videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  webkit-playsinline=""
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
-                />
-                {/* Face guide overlay */}
-                <div style={{
-                  position: 'absolute', inset: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  pointerEvents: 'none',
-                }}>
-                  <div style={{
-                    width: '65%', height: '75%', borderRadius: '50%',
-                    border: `3px solid ${theme.primary}80`,
-                    boxShadow: `0 0 0 9999px rgba(0,0,0,0.25)`,
-                  }} />
-                </div>
-                {/* Countdown */}
-                {camera.countdown && (
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: 'rgba(0,0,0,0.4)',
-                    color: 'white', fontSize: 72, fontWeight: 700,
-                  }}>
-                    {camera.countdown}
-                  </div>
-                )}
-                {/* Instruction bar */}
-                <div style={{
-                  position: 'absolute', bottom: 16, left: 16, right: 16,
-                  textAlign: 'center', background: 'rgba(0,0,0,0.6)',
-                  borderRadius: 10, padding: '10px 16px',
-                  color: 'white', fontSize: 14, fontWeight: 500,
-                }}>
-                  {step.instruction}
-                </div>
-              </>
-            ) : photos[step?.id] ? (
-              <img
-                src={photos[step.id]}
-                alt={step.label}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-            ) : (
-              <div style={{
-                width: '100%', height: '100%',
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center', color: '#888',
-              }}>
-                <div style={{ fontSize: 48, marginBottom: 12 }}>{step.icon}</div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>{step.label}</div>
-                <div style={{ fontSize: 13, marginTop: 4 }}>{step.instruction}</div>
-              </div>
-            )}
+            <img
+              src={capturedImage}
+              alt="Captured photo"
+              style={{ width: '100%', display: 'block' }}
+            />
+            <div style={{
+              position: 'absolute', top: 12, right: 12,
+              background: theme.success, color: 'white',
+              borderRadius: 20, padding: '6px 14px',
+              fontSize: 12, fontWeight: 600,
+            }}>
+              Photo captured
+            </div>
           </div>
 
-          {/* Action buttons */}
-          {!camera.active && !photos[step?.id] && (
-            <PrimaryButton label="📷 Open Camera" onClick={handleOpenCamera} />
-          )}
+          <button
+            onClick={retake}
+            style={{
+              marginTop: 16, padding: '10px 24px',
+              background: 'transparent',
+              border: `2px solid ${theme.border}`,
+              borderRadius: 10, fontSize: 14, fontWeight: 600,
+              color: theme.textLight, cursor: 'pointer',
+            }}
+          >
+            Retake Photo
+          </button>
+        </div>
+      ) : !cameraOpen ? (
+        // Show capture buttons
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '100%', maxWidth: 360, margin: '0 auto',
+            aspectRatio: '3/4', borderRadius: 16,
+            background: '#f0ede8',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            gap: 16,
+          }}>
+            <div style={{ fontSize: 48, opacity: 0.3 }}>📸</div>
+            <div style={{ fontSize: 14, color: theme.textMuted, padding: '0 20px', textAlign: 'center' }}>
+              {sdkLoaded
+                ? 'Tap below to open the guided camera'
+                : sdkError
+                  ? sdkError
+                  : 'Loading camera...'}
+            </div>
+          </div>
 
-          {camera.active && !camera.countdown && (
-            <PrimaryButton label={`Capture ${step.label}`} onClick={handleCapture} />
-          )}
+          <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+            {/* Primary: Camera Kit */}
+            <button
+              onClick={openCamera}
+              disabled={!sdkLoaded}
+              style={{
+                width: '100%', maxWidth: 360, padding: '16px 24px',
+                background: sdkLoaded
+                  ? `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`
+                  : theme.border,
+                color: sdkLoaded ? 'white' : theme.textMuted,
+                border: 'none', borderRadius: 12,
+                fontSize: 16, fontWeight: 700,
+                cursor: sdkLoaded ? 'pointer' : 'not-allowed',
+              }}
+            >
+              {sdkLoaded ? 'Open Camera' : 'Loading Camera...'}
+            </button>
 
-          {!camera.active && photos[step?.id] && (
-            <div style={{ display: 'flex', gap: 10 }}>
-              <PrimaryButton
-                label="Retake"
-                onClick={handleRetake}
-                style={{ background: theme.surfaceAlt, color: theme.text, flex: 1 }}
-              />
-              <PrimaryButton
-                label={currentIdx < 2 ? `Next: ${PHOTO_STEPS[currentIdx + 1].label} →` : 'Done ✓'}
-                onClick={handleNext}
-                style={{ flex: 2 }}
-                disabled={currentIdx >= 2}
-              />
+            {/* Fallback: file upload */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                width: '100%', maxWidth: 360, padding: '12px 24px',
+                background: 'transparent',
+                border: `2px solid ${theme.border}`,
+                borderRadius: 12, fontSize: 14, fontWeight: 600,
+                color: theme.textLight, cursor: 'pointer',
+              }}
+            >
+              Or upload a photo
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png"
+              capture="user"
+              onChange={handleFileUpload}
+              style={{ display: 'none' }}
+            />
+          </div>
+        </div>
+      ) : (
+        // Camera is open — SDK renders its own UI in #YMK-module
+        <div style={{ textAlign: 'center' }}>
+          {qualityStatus && (
+            <div style={{
+              marginTop: 16, padding: 12,
+              background: theme.surface, borderRadius: 10,
+              border: `1px solid ${theme.border}`,
+              fontSize: 13, color: theme.textLight,
+            }}>
+              <QualityIndicator quality={qualityStatus} />
             </div>
           )}
-        </>
-      )}
-
-      {allDone && (
-        <div style={{ textAlign: 'center', padding: '20px 0' }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
-          <div style={{ fontSize: 18, fontWeight: 600, color: theme.success }}>All 3 photos captured!</div>
-          <p style={{ fontSize: 14, color: theme.textLight, marginTop: 8 }}>
-            Tap any photo above to retake it.
-          </p>
+          <button
+            onClick={() => {
+              window.YMK.close()
+              setCameraOpen(false)
+            }}
+            style={{
+              marginTop: 12, padding: '10px 24px',
+              background: 'transparent',
+              border: `2px solid ${theme.border}`,
+              borderRadius: 10, fontSize: 14, fontWeight: 600,
+              color: theme.textLight, cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
         </div>
       )}
+    </div>
+  )
+}
+
+
+function QualityIndicator({ quality }) {
+  const items = [
+    { label: 'Face detected', ok: quality.hasFace },
+    { label: 'Position', ok: quality.position === 'good' },
+    { label: 'Facing forward', ok: quality.frontal === 'good' },
+    { label: 'Lighting', ok: quality.lighting === 'good' || quality.lighting === 'ok' },
+  ]
+
+  return (
+    <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+      {items.map(({ label, ok }) => (
+        <span key={label} style={{
+          fontSize: 12, color: ok ? theme.success : theme.accent,
+          fontWeight: 600,
+        }}>
+          {ok ? '✓' : '○'} {label}
+        </span>
+      ))}
     </div>
   )
 }

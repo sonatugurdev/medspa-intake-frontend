@@ -1,21 +1,14 @@
-import { API_BASE_URL } from './constants'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-export async function submitIntake({ goals, history, photos }) {
+export async function submitIntake({ goals, history, photo }) {
   const payload = {
     goals,
-    medications: history.medications.map(m => typeof m === 'object' ? m.name : m),
-    medication_rxcuis: history.medications
-      .filter(m => typeof m === 'object' && m.rxcui)
-      .map(m => ({ name: m.name, rxcui: m.rxcui })),
+    medications: history.medications,
     allergies: history.allergies,
     pregnant_nursing: history.pregnant,
     history_herpes: history.herpes,
     recent_procedure: history.recentProcedure,
-    photos: {
-      frontal: photos.frontal,
-      left: photos.left,
-      right: photos.right,
-    },
+    photo, // single base64 data URL
   }
 
   try {
@@ -33,115 +26,57 @@ export async function submitIntake({ goals, history, photos }) {
     return await response.json()
   } catch (err) {
     console.warn('Backend not available, using demo data:', err.message)
-    // Return demo data so the frontend works without the backend
     return getDemoResult()
   }
 }
 
 function getDemoResult() {
   return {
+    _demo: true,
     intake_id: 'demo-' + Date.now(),
     status: 'complete',
     skin_analysis: {
-      overall_skin_health: 74,
+      overall_skin_health: 76,
+      skin_age: 32,
       fitzpatrick: { type: 3, label: 'Medium', confidence: 0.85 },
-      face_bounds: { x: 25, y: 10, width: 50, height: 65 },
-      zones: {
-        forehead: { texture_score: 78, wrinkle_depth_index: 0.8, pigmentation_score: 85, hydration_estimate: 72, notes: 'Minimal fine lines, good overall texture' },
-        periorbital: { texture_score: 72, wrinkle_depth_index: 1.2, pigmentation_score: 80, hydration_estimate: 65, notes: 'Early crow\'s feet visible at angles' },
-        midface: { texture_score: 80, wrinkle_depth_index: 0.5, pigmentation_score: 88, hydration_estimate: 75, notes: 'Even tone, good elasticity' },
-        perioral: { texture_score: 74, wrinkle_depth_index: 0.6, pigmentation_score: 84, hydration_estimate: 68, notes: 'Well maintained' },
-        jawline_neck: { texture_score: 76, wrinkle_depth_index: 0.3, pigmentation_score: 82, hydration_estimate: 70, notes: 'Good definition' },
+      glogau: { type: 2, label: 'Moderate', description: 'Early wrinkles in motion' },
+      headline: 'Your skin shows a healthy foundation with early signs of aging that respond well to preventive treatments.',
+      strengths: ['Even skin tone', 'Good hydration levels', 'Healthy skin barrier'],
+      improvements: ['Early forehead expression lines', 'Mild pore visibility in T-zone'],
+      cv_scores: {
+        hd_wrinkle: {
+          forehead: { ui_score: 72, raw_score: 60.5 },
+          glabellar: { ui_score: 78, raw_score: 70.2 },
+          crowfeet: { ui_score: 80, raw_score: 75.1 },
+          periocular: { ui_score: 74, raw_score: 65.3 },
+          nasolabial: { ui_score: 76, raw_score: 68.0 },
+          marionette: { ui_score: 82, raw_score: 78.4 },
+          whole: { ui_score: 68, raw_score: 52.8 },
+        },
+        hd_pore: {
+          forehead: { ui_score: 80, raw_score: 74.2 },
+          nose: { ui_score: 58, raw_score: 32.5 },
+          cheek: { ui_score: 68, raw_score: 48.3 },
+          whole: { ui_score: 70, raw_score: 52.1 },
+        },
+        hd_acne: {
+          whole: { ui_score: 88, raw_score: 82.0 },
+        },
+        hd_age_spot: {
+          ui_score: 82, raw_score: 76.5,
+        },
       },
-      cross_view_observations: [
-        'Fine lines around eyes more visible from side angles',
-        'Skin tone is consistent across all views',
+      mask_urls: {},
+      clinical_observations: [
+        { category: 'volume_loss', zone: 'midface', severity: 'mild', description: 'Subtle midface volume deflation', confidence: 0.7 },
+        { category: 'skin_laxity', zone: 'jawline', severity: 'none', description: 'Good jawline definition maintained', confidence: 0.85 },
       ],
-      key_findings: [
-        'Healthy skin with early signs of aging around the eyes',
-        'Even skin tone with good hydration',
+      treatment_considerations: [
+        { concern: 'Forehead expression lines', approaches: ['Botox', 'Dysport'], priority: 'medium' },
+        { concern: 'Pore refinement', approaches: ['HydraFacial', 'Chemical Peel'], priority: 'low' },
       ],
-      visual_findings: [
-        {
-          type: 'fine_lines',
-          label: 'Forehead Expression Lines',
-          description: 'Mild horizontal lines across the forehead, typical of expressive facial movement. These are dynamic lines that deepen with facial expressions.',
-          severity: 'mild',
-          zone: 'forehead',
-          paths: [
-            [[35,18], [40,17], [45,17.5], [50,17], [55,17.5], [60,17], [65,18]],
-            [[37,21], [42,20], [47,20.5], [52,20], [57,20.5], [62,20], [63,21]],
-            [[38,24], [43,23], [48,23.5], [53,23], [58,23.5], [61,24]],
-          ],
-        },
-        {
-          type: 'wrinkles',
-          label: "Crow's Feet (Left)",
-          description: 'Fine lines radiating from the outer corner of your left eye. Among the earliest signs of aging, these respond very well to neuromodulator treatments.',
-          severity: 'mild',
-          zone: 'periorbital',
-          paths: [
-            [[30,33], [28,31], [26,29]],
-            [[30,35], [27,34], [25,33]],
-            [[30,37], [28,38], [26,39]],
-          ],
-        },
-        {
-          type: 'wrinkles',
-          label: "Crow's Feet (Right)",
-          description: 'Matching fine lines on the right side, symmetrical with the left. Consistent aging pattern indicates these are expression-related.',
-          severity: 'mild',
-          zone: 'periorbital',
-          paths: [
-            [[70,33], [72,31], [74,29]],
-            [[70,35], [73,34], [75,33]],
-            [[70,37], [72,38], [74,39]],
-          ],
-        },
-        {
-          type: 'fine_lines',
-          label: 'Nasolabial Folds',
-          description: 'Subtle lines running from the sides of the nose toward the mouth corners. These are normal facial contours that deepen with age.',
-          severity: 'mild',
-          zone: 'midface',
-          paths: [
-            [[42,42], [41,47], [40,52], [41,57], [42,60]],
-            [[58,42], [59,47], [60,52], [59,57], [58,60]],
-          ],
-        },
-        {
-          type: 'dark_circles',
-          label: 'Under-Eye Shadows',
-          description: 'Mild under-eye darkness, likely due to skin thinness in this area rather than pigmentation. Common and often genetic.',
-          severity: 'mild',
-          zone: 'periorbital',
-          region: { x: 40, y: 37, width: 8, height: 3 },
-        },
-        {
-          type: 'dark_circles',
-          label: 'Under-Eye Shadows (Right)',
-          description: 'Matching under-eye hollowing on the right side. Can be addressed with hyaluronic acid fillers or PRP treatment.',
-          severity: 'mild',
-          zone: 'periorbital',
-          region: { x: 60, y: 37, width: 8, height: 3 },
-        },
-      ],
+      contraindications: [],
     },
-    patient_summary: {
-      headline: 'Your skin is in great shape with an excellent foundation for preventive care',
-      strengths: ['Even skin tone', 'Good elasticity', 'Healthy hydration'],
-      areas_for_improvement: ['Early crow\'s feet forming', 'Mild forehead expression lines'],
-      estimated_skin_age: 29,
-    },
-    contraindications: [],
-    recommendations: {
-      treatments: [
-        { treatment_name: 'Botox Cosmetic — Crow\'s Feet', final_score: 0.85, blocked_by_contraindication: false },
-        { treatment_name: 'HydraFacial', final_score: 0.78, blocked_by_contraindication: false },
-        { treatment_name: 'Light Chemical Peel', final_score: 0.72, blocked_by_contraindication: false },
-      ],
-    },
-    processing_time_ms: 0,
-    _demo: true,
+    processing_time_ms: 8500,
   }
 }

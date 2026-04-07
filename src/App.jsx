@@ -25,7 +25,7 @@ export default function App() {
     switch (step) {
       case 0: return intake.goals.length > 0
       case 1: return true
-      case 2: return intake.photos.frontal && intake.photos.left && intake.photos.right
+      case 2: return !!intake.photo  // single photo now
       case 3: return true
       default: return true
     }
@@ -35,7 +35,7 @@ export default function App() {
     setPhase('analyzing')
     setSubmitError(null)
 
-    // Minimum display time for analyzing screen (better UX)
+    // Minimum display time for analyzing screen
     const minDisplayTime = new Promise(resolve => setTimeout(resolve, 4000))
 
     try {
@@ -43,7 +43,7 @@ export default function App() {
         submitIntake({
           goals: intake.goals,
           history: intake.history,
-          photos: intake.photos,
+          photo: intake.photo,  // single photo
         }),
         minDisplayTime,
       ])
@@ -98,7 +98,10 @@ export default function App() {
   if (phase === 'score') {
     return (
       <div style={containerStyle}>
-        <ScoreRevealScreen result={intake.analysisResult} frontalPhoto={intake.photos.frontal} />
+        <ScoreRevealScreen
+          result={intake.analysisResult}
+          frontalPhoto={intake.photo}
+        />
         {submitError && (
           <div style={{
             position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
@@ -106,7 +109,9 @@ export default function App() {
             borderRadius: 8, padding: '8px 16px', fontSize: 12, color: theme.accent,
             maxWidth: 380, textAlign: 'center', zIndex: 20,
           }}>
-            Using demo data — backend not connected
+            {submitError === 'demo'
+              ? 'Using demo data — backend not connected'
+              : `Error: ${submitError}`}
           </div>
         )}
         <BottomBar>
@@ -155,9 +160,8 @@ export default function App() {
 
         {step === 2 && (
           <PhotoScreen
-            photos={intake.photos}
+            photo={intake.photo}
             setPhoto={intake.setPhoto}
-            clearPhoto={intake.clearPhoto}
           />
         )}
 
@@ -165,27 +169,18 @@ export default function App() {
           <ReviewScreen
             goals={intake.goals}
             history={intake.history}
-            photos={intake.photos}
+            photo={intake.photo}
           />
         )}
       </div>
 
-      {/* Hide bottom bar on photo step — it has its own capture/retake/next buttons */}
-      {step !== 2 && (
-        <BottomBar>
-          <PrimaryButton
-            label={stepLabels[step]}
-            onClick={handleNext}
-            disabled={!canProceed()}
-          />
-        </BottomBar>
-      )}
-      {/* On photo step, show Continue only when all 3 photos are captured */}
-      {step === 2 && intake.photos.frontal && intake.photos.left && intake.photos.right && (
-        <BottomBar>
-          <PrimaryButton label="Continue" onClick={handleNext} />
-        </BottomBar>
-      )}
+      <BottomBar>
+        <PrimaryButton
+          label={stepLabels[step]}
+          onClick={handleNext}
+          disabled={!canProceed()}
+        />
+      </BottomBar>
     </div>
   )
 }
@@ -195,5 +190,5 @@ const containerStyle = {
   margin: '0 auto',
   position: 'relative',
   minHeight: '100vh',
-  background: theme.bg,
+  background: theme.background,
 }
