@@ -1,0 +1,70 @@
+:root {
+  --primary: #3B8B8A;
+  --primary-light: #4CA8A7;
+  --primary-dark: #2D6E6D;
+  --secondary: #2D2A2E;
+  --accent: #D4930D;
+  --accent-light: #F5B642;
+  --bg: #FFF8F2;
+  --surface: #FFFFFF;
+  --surface-alt: #F7F0E8;
+  --text: #2D2A2E;
+  --text-light: #6B6770;
+  --text-muted: #9B979E;
+  --success: #2D8B5F;
+  --warning: #D4930D;
+  --error: #C94B4B;
+  --border: #E8E0D8;
+  --radius: 12px;
+}
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+input, button, textarea, select {
+  font-family: inherit;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+button {
+  cursor: pointer;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.7; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.fade-in {
+  animation: fadeInUp 0.5s ease forwards;
+}
+
+.slide-in {
+  animation: slideIn 0.4s ease forwards;
+}
