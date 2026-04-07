@@ -78,6 +78,7 @@ export default function ScoreRevealScreen({ result, frontalPhoto }) {
   return (
     <div style={{
       padding: '0 20px',
+      paddingBottom: 120,
       opacity: revealed ? 1 : 0,
       transform: revealed ? 'translateY(0)' : 'translateY(20px)',
       transition: 'all 0.6s ease',
@@ -386,10 +387,17 @@ function ScoreBar({ label, score, compact = false }) {
 // ─── Overview Tab ───────────────────────────────────────────────
 
 function OverviewTab({ strengths, improvements, cvScores, contraindications }) {
-  const wrinkleWhole = cvScores?.hd_wrinkle?.whole?.ui_score
-  const poreWhole = cvScores?.hd_pore?.whole?.ui_score
-  const acneScore = cvScores?.hd_acne?.whole?.ui_score
-  const ageSpotScore = cvScores?.hd_age_spot?.ui_score
+  // Handle both nested (zone breakdown) and flat (direct ui_score) formats
+  const getOverall = (data) => {
+    if (!data) return null
+    if (data.whole?.ui_score != null) return data.whole.ui_score
+    if (data.ui_score != null) return data.ui_score
+    return null
+  }
+  const wrinkleWhole = getOverall(cvScores?.hd_wrinkle)
+  const poreWhole = getOverall(cvScores?.hd_pore)
+  const acneScore = getOverall(cvScores?.hd_acne)
+  const ageSpotScore = getOverall(cvScores?.hd_age_spot)
 
   return (
     <>
@@ -478,58 +486,99 @@ function OverviewTab({ strengths, improvements, cvScores, contraindications }) {
 // ─── Zone Details Tab ───────────────────────────────────────────
 
 function ZoneDetailsTab({ cvScores }) {
-  const wrinkleZones = cvScores?.hd_wrinkle || {}
-  const poreZones = cvScores?.hd_pore || {}
-  const acne = cvScores?.hd_acne?.whole || cvScores?.hd_acne
-  const ageSpot = cvScores?.hd_age_spot
+  // Helper: check if a scores object has zone breakdowns (nested dicts with ui_score)
+  // vs being a flat score object itself (has ui_score at top level)
+  const hasZones = (obj) => {
+    if (!obj || typeof obj !== 'object') return false
+    // If it has ui_score directly, it's a flat score — no zones
+    if ('ui_score' in obj) return false
+    // If it has keys that are objects with ui_score, it has zones
+    return Object.values(obj).some(v => v && typeof v === 'object' && 'ui_score' in v)
+  }
+
+  const wrinkleData = cvScores?.hd_wrinkle || {}
+  const poreData = cvScores?.hd_pore || {}
+  const acneData = cvScores?.hd_acne || {}
+  const ageSpotData = cvScores?.hd_age_spot || {}
+
+  const wrinkleHasZones = hasZones(wrinkleData)
+  const poreHasZones = hasZones(poreData)
+
+  // Extract overall scores regardless of format
+  const getOverall = (data) => {
+    if (!data) return null
+    if (data.whole?.ui_score != null) return data.whole.ui_score
+    if (data.ui_score != null) return data.ui_score
+    return null
+  }
+
+  const wrinkleOverall = getOverall(wrinkleData)
+  const poreOverall = getOverall(poreData)
+  const acneScore = getOverall(acneData)
+  const ageSpotScore = getOverall(ageSpotData)
 
   return (
     <>
-      {Object.keys(wrinkleZones).length > 0 && (
+      {/* Wrinkle zones */}
+      {wrinkleOverall != null && (
         <div style={{
           background: theme.surface, borderRadius: 12, padding: 16,
           border: `1px solid ${theme.border}`, marginBottom: 16,
         }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, marginBottom: 14 }}>
-            Wrinkle Analysis by Zone
+            Wrinkle Analysis{wrinkleHasZones ? ' by Zone' : ''}
           </div>
-          {Object.entries(wrinkleZones)
-            .filter(([zone]) => zone !== 'whole')
-            .sort(([, a], [, b]) => (a.ui_score || 0) - (b.ui_score || 0))
-            .map(([zone, data]) => (
-              <ScoreBar key={zone} label={WRINKLE_ZONE_LABELS[zone] || zone} score={data.ui_score} compact />
-            ))}
-          {wrinkleZones.whole && (
-            <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${theme.border}` }}>
-              <ScoreBar label="Overall Wrinkle Score" score={wrinkleZones.whole.ui_score} />
-            </div>
+          {wrinkleHasZones ? (
+            <>
+              {Object.entries(wrinkleData)
+                .filter(([zone, v]) => zone !== 'whole' && v && typeof v === 'object' && 'ui_score' in v)
+                .sort(([, a], [, b]) => (a.ui_score || 0) - (b.ui_score || 0))
+                .map(([zone, data]) => (
+                  <ScoreBar key={zone} label={WRINKLE_ZONE_LABELS[zone] || zone} score={data.ui_score} compact />
+                ))}
+              {wrinkleData.whole && (
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${theme.border}` }}>
+                  <ScoreBar label="Overall Wrinkle Score" score={wrinkleData.whole.ui_score} />
+                </div>
+              )}
+            </>
+          ) : (
+            <ScoreBar label="Wrinkle Score" score={wrinkleOverall} />
           )}
         </div>
       )}
 
-      {Object.keys(poreZones).length > 0 && (
+      {/* Pore zones */}
+      {poreOverall != null && (
         <div style={{
           background: theme.surface, borderRadius: 12, padding: 16,
           border: `1px solid ${theme.border}`, marginBottom: 16,
         }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, marginBottom: 14 }}>
-            Pore Analysis by Zone
+            Pore Analysis{poreHasZones ? ' by Zone' : ''}
           </div>
-          {Object.entries(poreZones)
-            .filter(([zone]) => zone !== 'whole')
-            .sort(([, a], [, b]) => (a.ui_score || 0) - (b.ui_score || 0))
-            .map(([zone, data]) => (
-              <ScoreBar key={zone} label={PORE_ZONE_LABELS[zone] || zone} score={data.ui_score} compact />
-            ))}
-          {poreZones.whole && (
-            <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${theme.border}` }}>
-              <ScoreBar label="Overall Pore Score" score={poreZones.whole.ui_score} />
-            </div>
+          {poreHasZones ? (
+            <>
+              {Object.entries(poreData)
+                .filter(([zone, v]) => zone !== 'whole' && v && typeof v === 'object' && 'ui_score' in v)
+                .sort(([, a], [, b]) => (a.ui_score || 0) - (b.ui_score || 0))
+                .map(([zone, data]) => (
+                  <ScoreBar key={zone} label={PORE_ZONE_LABELS[zone] || zone} score={data.ui_score} compact />
+                ))}
+              {poreData.whole && (
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${theme.border}` }}>
+                  <ScoreBar label="Overall Pore Score" score={poreData.whole.ui_score} />
+                </div>
+              )}
+            </>
+          ) : (
+            <ScoreBar label="Pore Score" score={poreOverall} />
           )}
         </div>
       )}
 
-      {(acne || ageSpot) && (
+      {/* Acne & Age Spots */}
+      {(acneScore != null || ageSpotScore != null) && (
         <div style={{
           background: theme.surface, borderRadius: 12, padding: 16,
           border: `1px solid ${theme.border}`, marginBottom: 16,
@@ -537,8 +586,8 @@ function ZoneDetailsTab({ cvScores }) {
           <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, marginBottom: 14 }}>
             Other Skin Concerns
           </div>
-          {acne?.ui_score != null && <ScoreBar label="Acne" score={acne.ui_score} />}
-          {ageSpot?.ui_score != null && <ScoreBar label="Age Spots" score={ageSpot.ui_score} />}
+          {acneScore != null && <ScoreBar label="Acne" score={acneScore} />}
+          {ageSpotScore != null && <ScoreBar label="Age Spots" score={ageSpotScore} />}
         </div>
       )}
     </>
