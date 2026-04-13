@@ -18,6 +18,7 @@ export const theme = {
   white: '#FFFFFF',
   // Semantic aliases
   primary: '#0F7B8C', primaryDark: '#0A5A68', primaryLight: '#14B8A6',
+  secondary: '#1A1A2E', surfaceAlt: '#F1F5F9',
   background: '#F8FAFC', surface: '#FFFFFF',
   text: '#0F172A', textLight: '#64748B', textMuted: '#94A3B8',
   border: '#E2E8F0', success: '#10B981', warning: '#F59E0B',
