@@ -1,6 +1,10 @@
-import { theme } from '../utils/constants'
+import { usePractice } from '../contexts/PracticeContext'
+import { theme as defaultTheme } from '../utils/constants'
 
-export default function WelcomeScreen({ onStart, practiceName }) {
+export default function WelcomeScreen({ onStart, practiceName, logoUrl, theme: themeProp }) {
+  let theme = themeProp || defaultTheme
+  try { const ctx = usePractice(); if (!themeProp && ctx?.theme) theme = ctx.theme } catch {}
+
   const steps = [
     'Tell us about yourself',
     'Share your goals & history',
@@ -13,10 +17,20 @@ export default function WelcomeScreen({ onStart, practiceName }) {
       display: 'flex', flexDirection: 'column', justifyContent: 'center',
       minHeight: '100vh', textAlign: 'center', padding: '40px 24px',
     }}>
-      {/* Logo */}
+      {/* Practice Logo or GlowaAI wordmark */}
       <div style={{ marginBottom: 24 }}>
-        <span style={{ fontSize: 28, fontWeight: 800, color: theme.teal, letterSpacing: -1 }}>Glowa</span>
-        <span style={{ fontSize: 28, fontWeight: 800, color: theme.navy, letterSpacing: -1 }}>AI</span>
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt={practiceName || 'Practice logo'}
+            style={{ maxHeight: 48, maxWidth: 200, objectFit: 'contain' }}
+          />
+        ) : (
+          <>
+            <span style={{ fontSize: 28, fontWeight: 800, color: theme.teal, letterSpacing: -1 }}>Glowa</span>
+            <span style={{ fontSize: 28, fontWeight: 800, color: theme.navy, letterSpacing: -1 }}>AI</span>
+          </>
+        )}
       </div>
 
       <h1 style={{
@@ -73,12 +87,6 @@ export default function WelcomeScreen({ onStart, practiceName }) {
       <p style={{ fontSize: 12, color: theme.s400, marginTop: 16 }}>
         Your information is private and HIPAA-compliant
       </p>
-
-      {/* Powered by footer */}
-      <div style={{ marginTop: 40, fontSize: 11, color: theme.s400 }}>
-        Powered by <span style={{ fontWeight: 700, color: theme.teal }}>Glowa</span>
-        <span style={{ fontWeight: 700, color: theme.navy }}>AI</span>
-      </div>
     </div>
   )
 }

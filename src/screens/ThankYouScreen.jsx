@@ -1,6 +1,7 @@
-import { theme } from '../utils/constants'
+import { theme as defaultTheme } from '../utils/constants'
 
-export default function ThankYouScreen() {
+export default function ThankYouScreen({ practiceName, theme: themeProp }) {
+  const theme = themeProp || defaultTheme
   return (
     <div className="fade-in" style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -20,7 +21,10 @@ export default function ThankYouScreen() {
       </h2>
 
       <p style={{ fontSize: 15, color: theme.textLight, lineHeight: 1.6, maxWidth: 300 }}>
-        Your provider will review your skin analysis and personalized recommendations before your appointment.
+        {practiceName
+          ? `Your provider at ${practiceName} will review your skin analysis and personalized recommendations before your appointment.`
+          : 'Your provider will review your skin analysis and personalized recommendations before your appointment.'
+        }
       </p>
 
       <div style={{

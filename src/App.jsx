@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
-import { theme, STEP_CONFIG } from './utils/constants'
+import { STEP_CONFIG } from './utils/constants'
 import { submitIntakeV2 } from './utils/api'
 import { useIntakeState } from './hooks/useIntakeState'
+import { usePractice } from './contexts/PracticeContext'
 import { StepHeader, PrimaryButton, BottomBar, SkipLink } from './components/UI'
 
 import WelcomeScreen from './screens/WelcomeScreen'
@@ -24,6 +25,9 @@ export default function App() {
   const [phase, setPhase] = useState('intake') // intake | analyzing | score | done
   const [submitError, setSubmitError] = useState(null)
 
+  const practice = usePractice()
+  const { theme, slug, practiceName, logoUrl, loading: practiceLoading, showPoweredBy } = practice
+
   const intake = useIntakeState()
 
   const canProceed = () => {
@@ -45,7 +49,7 @@ export default function App() {
     setSubmitError(null)
 
     const minDisplayTime = new Promise(resolve => setTimeout(resolve, 4000))
-    const payload = intake.buildPayload('demo-clinic')
+    const payload = intake.buildPayload(slug)
 
     try {
       const [result] = await Promise.all([submitIntakeV2(payload), minDisplayTime])
@@ -59,7 +63,7 @@ export default function App() {
     }
 
     setPhase('score')
-  }, [intake])
+  }, [intake, slug])
 
   const handleNext = () => {
     if (step === TOTAL_STEPS - 1) {
@@ -73,18 +77,54 @@ export default function App() {
     if (step > 0) setStep(step - 1)
   }
 
+  const containerStyle = {
+    maxWidth: 430,
+    margin: '0 auto',
+    position: 'relative',
+    minHeight: '100vh',
+    background: theme.s50,
+    display: 'flex',
+    flexDirection: 'column',
+  }
+
+  // ─── Loading State ──────────────────────────────────────────
+  if (practiceLoading) {
+    return (
+      <div style={containerStyle}>
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', minHeight: '100vh', gap: 16,
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%',
+            border: `3px solid ${theme.s200}`, borderTopColor: theme.teal,
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <span style={{ fontSize: 14, color: theme.s400 }}>Loading...</span>
+        </div>
+      </div>
+    )
+  }
+
   // ─── Welcome ──────────────────────────────────────────────
   if (step === -1) {
     return (
       <div style={containerStyle}>
-        <WelcomeScreen onStart={() => setStep(0)} />
+        <WelcomeScreen
+          onStart={() => setStep(0)}
+          practiceName={practiceName}
+          logoUrl={logoUrl}
+          theme={theme}
+        />
+        <PoweredByFooter theme={theme} show={showPoweredBy} />
       </div>
     )
   }
 
   // ─── Analyzing ────────────────────────────────────────────
   if (phase === 'analyzing') {
-    return <div style={containerStyle}><AnalyzingScreen /></div>
+    return <div style={containerStyle}><AnalyzingScreen theme={theme} /></div>
   }
 
   // ─── Score Reveal ─────────────────────────────────────────
@@ -102,16 +142,22 @@ export default function App() {
             {submitError === 'demo' ? 'Using demo data — backend not connected' : `Error: ${submitError}`}
           </div>
         )}
-        <BottomBar>
-          <PrimaryButton label="Continue" onClick={() => setPhase('done')} />
+        <BottomBar theme={theme}>
+          <PrimaryButton label="Continue" onClick={() => setPhase('done')} theme={theme} />
         </BottomBar>
+        <PoweredByFooter theme={theme} show={showPoweredBy} />
       </div>
     )
   }
 
   // ─── Done ─────────────────────────────────────────────────
   if (phase === 'done') {
-    return <div style={containerStyle}><ThankYouScreen /></div>
+    return (
+      <div style={containerStyle}>
+        <ThankYouScreen practiceName={practiceName} theme={theme} />
+        <PoweredByFooter theme={theme} show={showPoweredBy} />
+      </div>
+    )
   }
 
   // ─── Intake Steps ─────────────────────────────────────────
@@ -119,7 +165,7 @@ export default function App() {
 
   return (
     <div style={containerStyle}>
-      <StepHeader step={step} totalSteps={TOTAL_STEPS} onBack={handleBack} canGoBack={step > 0} />
+      <StepHeader step={step} totalSteps={TOTAL_STEPS} onBack={handleBack} canGoBack={step > 0} theme={theme} />
 
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' }}>
         <div style={{ padding: '20px 24px', paddingBottom: 120 }}>
@@ -158,28 +204,26 @@ export default function App() {
         </div>
       </div>
 
-      <BottomBar>
-        <PrimaryButton label={buttonLabels[step]} onClick={handleNext} disabled={!canProceed()} />
-        {step === 6 && <SkipLink onClick={handleNext} />}
+      <BottomBar theme={theme}>
+        <PrimaryButton label={buttonLabels[step]} onClick={handleNext} disabled={!canProceed()} theme={theme} />
+        {step === 6 && <SkipLink onClick={handleNext} theme={theme} />}
       </BottomBar>
 
-      {/* Powered by footer — visible on all steps */}
-      <div style={{
-        position: 'fixed', bottom: 4, left: '50%', transform: 'translateX(-50%)',
-        fontSize: 9, color: theme.s300, zIndex: 5,
-      }}>
-        Powered by <span style={{ fontWeight: 700 }}>GlowaAI</span>
-      </div>
+      <PoweredByFooter theme={theme} show={showPoweredBy} />
     </div>
   )
 }
 
-const containerStyle = {
-  maxWidth: 430,
-  margin: '0 auto',
-  position: 'relative',
-  minHeight: '100vh',
-  background: theme.s50,
-  display: 'flex',
-  flexDirection: 'column',
+function PoweredByFooter({ theme, show }) {
+  if (!show) return null
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 4, left: '50%', transform: 'translateX(-50%)',
+      fontSize: 9, color: theme.s300, zIndex: 5,
+    }}>
+      Powered by <span style={{ fontWeight: 700, color: theme.teal }}>Glowa</span>
+      <span style={{ fontWeight: 700, color: theme.navy }}>AI</span>
+    </div>
+  )
 }
