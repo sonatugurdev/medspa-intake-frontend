@@ -14,32 +14,165 @@ const theme = {
   error: '#C43E3E',
 }
 
+const SUB_STEPS = [
+  { key: 'front', label: 'Front', instruction: 'Look straight at the camera' },
+  { key: 'left', label: 'Left 45°', instruction: 'Turn your head slightly to the right so we see your left side' },
+  { key: 'right', label: 'Right 45°', instruction: 'Turn your head slightly to the left so we see your right side' },
+]
+
 /**
- * PhotoScreen — uses MakeupAR JS Camera Kit for guided HD skincare capture.
+ * PhotoScreen — 3-step photo capture:
+ *   1. Frontal via MakeupAR JS Camera Kit (HD skin analysis grade)
+ *   2. Left 45° via getUserMedia + canvas (pose guide overlay)
+ *   3. Right 45° via getUserMedia + canvas (pose guide overlay)
  *
- * The Camera Kit handles:
- * - Camera permission requests
- * - Real-time face detection
- * - Face quality validation (lighting, pose, distance)
- * - Automatic capture when conditions pass
- * - Returns a high-res base64 image
- *
- * Fallback: if Camera Kit fails to load (e.g., unsupported browser),
- * falls back to a simple file input for photo upload.
+ * Frontal is required for analysis. Side angles are optional
+ * and stored for practitioner reference only.
  */
-export default function PhotoScreen({ photo, setPhoto }) {
+export default function PhotoScreen({
+  photo, setPhoto,
+  photoLeft, setPhotoLeft,
+  photoRight, setPhotoRight,
+}) {
+  // Sub-step: 0 = front, 1 = left, 2 = right
+  const [subStep, setSubStep] = useState(() => photo ? 1 : 0)
+
+  const images = {
+    front: photo || null,
+    left: photoLeft || null,
+    right: photoRight || null,
+  }
+
+  const setters = {
+    front: setPhoto,
+    left: setPhotoLeft,
+    right: setPhotoRight,
+  }
+
+  const handleCapture = useCallback((key, dataUrl) => {
+    setters[key](dataUrl)
+    // Auto-advance after capture (except on last step)
+    if (key === 'front') setSubStep(1)
+    else if (key === 'left') setSubStep(2)
+  }, [setPhoto, setPhotoLeft, setPhotoRight])
+
+  const handleRetake = useCallback((key) => {
+    setters[key](null)
+  }, [setPhoto, setPhotoLeft, setPhotoRight])
+
+  return (
+    <div style={{ padding: '0 20px' }}>
+      <h2 style={{ fontSize: 22, fontWeight: 700, color: theme.text, marginBottom: 8 }}>
+        Capture Your Photos
+      </h2>
+      <p style={{ fontSize: 14, color: theme.textLight, lineHeight: 1.5, marginBottom: 20 }}>
+        {subStep === 0
+          ? 'Start with a clear frontal photo — the camera will guide you.'
+          : 'Side angle photos are optional but help your practitioner.'}
+      </p>
+
+      {/* Sub-step indicator */}
+      <SubStepIndicator current={subStep} images={images} onSelect={setSubStep} />
+
+      {/* Tips (only on frontal) */}
+      {subStep === 0 && (
+        <div style={{
+          background: `${theme.primary}08`,
+          borderRadius: 12, padding: 16, marginBottom: 24,
+          borderLeft: `4px solid ${theme.primary}`,
+        }}>
+          <div style={{
+            fontSize: 12, fontWeight: 700, color: theme.primary,
+            textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8,
+          }}>
+            For best results
+          </div>
+          <div style={{ fontSize: 13, color: theme.textLight, lineHeight: 1.6 }}>
+            Remove glasses and pull hair back from your forehead. Good, even lighting helps — avoid harsh shadows or backlight. No makeup gives the most accurate analysis.
+          </div>
+        </div>
+      )}
+
+      {/* Step content */}
+      {subStep === 0 ? (
+        <FrontalCapture
+          image={images.front}
+          onCapture={(url) => handleCapture('front', url)}
+          onRetake={() => handleRetake('front')}
+        />
+      ) : (
+        <SideCapture
+          key={SUB_STEPS[subStep].key}
+          side={SUB_STEPS[subStep].key}
+          label={SUB_STEPS[subStep].label}
+          instruction={SUB_STEPS[subStep].instruction}
+          image={images[SUB_STEPS[subStep].key]}
+          onCapture={(url) => handleCapture(SUB_STEPS[subStep].key, url)}
+          onRetake={() => handleRetake(SUB_STEPS[subStep].key)}
+          onSkip={subStep < 2 ? () => setSubStep(subStep + 1) : null}
+        />
+      )}
+    </div>
+  )
+}
+
+
+// ─── Sub-step Indicator ───────────────────────────────────────
+
+function SubStepIndicator({ current, images, onSelect }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 8, marginBottom: 20,
+      justifyContent: 'center',
+    }}>
+      {SUB_STEPS.map((s, i) => {
+        const captured = !!images[s.key]
+        const active = i === current
+        return (
+          <button
+            key={s.key}
+            onClick={() => onSelect(i)}
+            style={{
+              flex: 1, maxWidth: 120,
+              padding: '10px 8px',
+              background: active ? `${theme.primary}10` : theme.surface,
+              border: `2px solid ${active ? theme.primary : captured ? theme.success : theme.border}`,
+              borderRadius: 10,
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            <div style={{
+              fontSize: 11, fontWeight: 700,
+              color: active ? theme.primary : captured ? theme.success : theme.textMuted,
+              marginBottom: 2,
+            }}>
+              {captured ? '✓ ' : ''}{s.label}
+            </div>
+            <div style={{
+              fontSize: 10,
+              color: active ? theme.primary : theme.textMuted,
+            }}>
+              {i === 0 ? 'Required' : 'Optional'}
+            </div>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+
+// ─── Frontal Capture (MakeupAR Camera Kit) ────────────────────
+// This is the original MakeupAR flow, extracted as a sub-component.
+
+function FrontalCapture({ image, onCapture, onRetake }) {
   const [sdkLoaded, setSdkLoaded] = useState(false)
   const [sdkError, setSdkError] = useState(null)
   const [cameraOpen, setCameraOpen] = useState(false)
-  const [capturedImage, setCapturedImage] = useState(photo || null)
   const [qualityStatus, setQualityStatus] = useState(null)
   const fileInputRef = useRef(null)
 
-  // Load the MakeupAR JS Camera Kit SDK
-  //
-  // Timing race: the SDK script calls window.ymkAsyncInit on load,
-  // but React's useEffect runs after paint. The SDK may execute before
-  // or after this effect. We handle both cases.
   useEffect(() => {
     let mounted = true
 
@@ -66,14 +199,12 @@ export default function PhotoScreen({ photo, setPhoto }) {
           const dataUrl = img.image.startsWith('data:')
             ? img.image
             : `data:image/jpeg;base64,${img.image}`
-          setCapturedImage(dataUrl)
-          setPhoto(dataUrl)
+          onCapture(dataUrl)
         } else {
           const reader = new FileReader()
           reader.onload = () => {
             if (!mounted) return
-            setCapturedImage(reader.result)
-            setPhoto(reader.result)
+            onCapture(reader.result)
             setCameraOpen(false)
             try { window.YMK.close() } catch (e) { /* */ }
           }
@@ -97,7 +228,6 @@ export default function PhotoScreen({ photo, setPhoto }) {
         if (mounted) setCameraOpen(false)
       })
 
-      // SDK might already be loaded — the 'loaded' event won't fire again
       try {
         if (window.YMK.isLoaded && window.YMK.isLoaded()) {
           console.log('[CameraKit] Already loaded')
@@ -105,7 +235,6 @@ export default function PhotoScreen({ photo, setPhoto }) {
         }
       } catch (e) { /* isLoaded may not exist yet */ }
 
-      // Fallback: if loaded event was missed, enable after 2s
       setTimeout(() => {
         if (mounted && window.YMK) {
           console.log('[CameraKit] Timeout fallback — enabling')
@@ -114,19 +243,16 @@ export default function PhotoScreen({ photo, setPhoto }) {
       }, 2000)
     }
 
-    // Set the callback the SDK looks for (covers case: SDK loads after this)
     window.ymkAsyncInit = function () {
       console.log('[CameraKit] ymkAsyncInit called by SDK')
       setupEventListeners()
     }
 
-    // If YMK already exists (SDK loaded before this effect), set up now
     if (window.YMK) {
       console.log('[CameraKit] YMK already available')
       setupEventListeners()
     }
 
-    // Load the script (skip if already in DOM from a previous mount)
     if (!document.querySelector('script[src*="makeupar.com"]')) {
       const script = document.createElement('script')
       script.type = 'text/javascript'
@@ -134,7 +260,6 @@ export default function PhotoScreen({ photo, setPhoto }) {
       script.src = 'https://plugins-media.makeupar.com/v2.2-camera-kit/sdk.js'
       script.onload = () => {
         console.log('[CameraKit] script onload fired')
-        // Give SDK a moment to init and call ymkAsyncInit
         setTimeout(() => {
           if (mounted && window.YMK) setupEventListeners()
         }, 500)
@@ -145,7 +270,6 @@ export default function PhotoScreen({ photo, setPhoto }) {
       }
       document.head.appendChild(script)
     } else {
-      // Script tag exists from previous mount — SDK should be available
       console.log('[CameraKit] Script already in DOM')
       setTimeout(() => {
         if (mounted && window.YMK) setupEventListeners()
@@ -166,12 +290,10 @@ export default function PhotoScreen({ photo, setPhoto }) {
       return
     }
 
-    // Size the camera module to fit the iPhone viewport
-    // Leave room for the tips banner above and button below
     const vw = Math.min(window.innerWidth, 430)
     const vh = window.innerHeight
-    const camWidth = Math.min(vw - 40, 340)   // 20px padding each side
-    const camHeight = Math.min(vh - 280, 440)  // room for header, tips, button
+    const camWidth = Math.min(vw - 40, 340)
+    const camHeight = Math.min(vh - 280, 440)
 
     window.YMK.init({
       faceDetectionMode: 'hdskincare',
@@ -188,141 +310,269 @@ export default function PhotoScreen({ photo, setPhoto }) {
   const handleFileUpload = useCallback((e) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     const reader = new FileReader()
-    reader.onload = () => {
-      setCapturedImage(reader.result)
-      setPhoto(reader.result)
-    }
+    reader.onload = () => onCapture(reader.result)
     reader.readAsDataURL(file)
-  }, [setPhoto])
+  }, [onCapture])
 
-  const retake = useCallback(() => {
-    setCapturedImage(null)
-    setPhoto(null)
-    setQualityStatus(null)
-  }, [setPhoto])
+  // Camera Kit mount point
+  const ymkModule = <div id="YMK-module" style={{ display: cameraOpen ? 'block' : 'none' }} />
+
+  if (image) {
+    return (
+      <div style={{ textAlign: 'center' }}>
+        {ymkModule}
+        <PhotoPreview src={image} label="Frontal photo captured" />
+        <button onClick={onRetake} style={retakeBtnStyle}>Retake Photo</button>
+      </div>
+    )
+  }
+
+  if (cameraOpen) {
+    return (
+      <div style={{ textAlign: 'center' }}>
+        {ymkModule}
+        {qualityStatus && (
+          <div style={{
+            marginTop: 16, padding: 12,
+            background: theme.surface, borderRadius: 10,
+            border: `1px solid ${theme.border}`,
+            fontSize: 13, color: theme.textLight,
+          }}>
+            <QualityIndicator quality={qualityStatus} />
+          </div>
+        )}
+        <button
+          onClick={() => { window.YMK.close(); setCameraOpen(false) }}
+          style={{ ...retakeBtnStyle, marginTop: 12 }}
+        >
+          Cancel
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div style={{ padding: '0 20px' }}>
-      <h2 style={{
-        fontSize: 22, fontWeight: 700, color: theme.text,
-        marginBottom: 8,
-      }}>
-        Capture Your Photo
-      </h2>
-      <p style={{
-        fontSize: 14, color: theme.textLight, lineHeight: 1.5,
-        marginBottom: 24,
-      }}>
-        One clear frontal photo is all we need. The camera will guide you for the best result.
-      </p>
-
-      {/* Tips */}
+    <div style={{ textAlign: 'center' }}>
+      {ymkModule}
       <div style={{
-        background: `${theme.primary}08`,
-        borderRadius: 12, padding: 16, marginBottom: 24,
-        borderLeft: `4px solid ${theme.primary}`,
+        width: '100%', maxWidth: 360, margin: '0 auto',
+        aspectRatio: '3/4', borderRadius: 16,
+        background: '#f0ede8',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 16,
       }}>
-        <div style={{
-          fontSize: 12, fontWeight: 700, color: theme.primary,
-          textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8,
-        }}>
-          For best results
-        </div>
-        <div style={{ fontSize: 13, color: theme.textLight, lineHeight: 1.6 }}>
-          Remove glasses and pull hair back from your forehead. Good, even lighting helps — avoid harsh shadows or backlight. No makeup gives the most accurate analysis.
+        <div style={{ fontSize: 48, opacity: 0.3 }}>📸</div>
+        <div style={{ fontSize: 14, color: theme.textMuted, padding: '0 20px', textAlign: 'center' }}>
+          {sdkLoaded
+            ? 'Tap below to open the guided camera'
+            : sdkError ? sdkError : 'Loading camera...'}
         </div>
       </div>
 
-      {/* Camera Kit mount point (required by SDK) */}
-      <div id="YMK-module" style={{ display: cameraOpen ? 'block' : 'none' }} />
+      <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+        <button
+          onClick={openCamera}
+          disabled={!sdkLoaded}
+          style={{
+            width: '100%', maxWidth: 360, padding: '16px 24px',
+            background: sdkLoaded
+              ? `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`
+              : theme.border,
+            color: sdkLoaded ? 'white' : theme.textMuted,
+            border: 'none', borderRadius: 12,
+            fontSize: 16, fontWeight: 700,
+            cursor: sdkLoaded ? 'pointer' : 'not-allowed',
+          }}
+        >
+          {sdkLoaded ? 'Open Camera' : 'Loading Camera...'}
+        </button>
 
-      {/* Main content area */}
-      {capturedImage ? (
-        // Show captured photo
-        <div style={{ textAlign: 'center' }}>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            width: '100%', maxWidth: 360, padding: '12px 24px',
+            background: 'transparent', border: `2px solid ${theme.border}`,
+            borderRadius: 12, fontSize: 14, fontWeight: 600,
+            color: theme.textLight, cursor: 'pointer',
+          }}
+        >
+          Or upload a photo
+        </button>
+        <input
+          ref={fileInputRef} type="file" accept="image/jpeg,image/png"
+          capture="user" onChange={handleFileUpload} style={{ display: 'none' }}
+        />
+      </div>
+    </div>
+  )
+}
+
+
+// ─── Side Angle Capture (getUserMedia) ────────────────────────
+
+function SideCapture({ side, label, instruction, image, onCapture, onRetake, onSkip }) {
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const streamRef = useRef(null)
+  const [cameraActive, setCameraActive] = useState(false)
+  const [cameraError, setCameraError] = useState(null)
+  const fileInputRef = useRef(null)
+
+  const startCamera = useCallback(async () => {
+    setCameraError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } },
+        audio: false,
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+      }
+      setCameraActive(true)
+    } catch (err) {
+      console.error('[SideCapture] Camera error:', err)
+      setCameraError('Could not access camera. Try uploading a photo instead.')
+    }
+  }, [])
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+    }
+    setCameraActive(false)
+  }, [])
+
+  // Cleanup on unmount
+  useEffect(() => () => stopCamera(), [stopCamera])
+
+  const capture = useCallback(() => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas) return
+
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+
+    // Mirror the capture to match preview (front camera is mirrored)
+    ctx.translate(canvas.width, 0)
+    ctx.scale(-1, 1)
+    ctx.drawImage(video, 0, 0)
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+    onCapture(dataUrl)
+    stopCamera()
+  }, [onCapture, stopCamera])
+
+  const handleFileUpload = useCallback((e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => onCapture(reader.result)
+    reader.readAsDataURL(file)
+  }, [onCapture])
+
+  if (image) {
+    return (
+      <div style={{ textAlign: 'center' }}>
+        <PhotoPreview src={image} label={`${label} captured`} />
+        <button onClick={onRetake} style={retakeBtnStyle}>Retake</button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ textAlign: 'center' }}>
+      {/* Instruction */}
+      <div style={{
+        background: `${theme.accent}10`,
+        borderRadius: 12, padding: 14, marginBottom: 20,
+        borderLeft: `4px solid ${theme.accent}`,
+      }}>
+        <div style={{ fontSize: 13, color: theme.text, fontWeight: 600, marginBottom: 4 }}>
+          {label} photo
+        </div>
+        <div style={{ fontSize: 13, color: theme.textLight, lineHeight: 1.5 }}>
+          {instruction}
+        </div>
+      </div>
+
+      {cameraActive ? (
+        /* Live viewfinder */
+        <div style={{ position: 'relative' }}>
           <div style={{
             width: '100%', maxWidth: 360, margin: '0 auto',
             borderRadius: 16, overflow: 'hidden',
-            border: `3px solid ${theme.success}`,
+            border: `2px solid ${theme.primary}`,
             position: 'relative',
+            aspectRatio: '3/4',
+            background: '#000',
           }}>
-            <img
-              src={capturedImage}
-              alt="Captured photo"
-              style={{ width: '100%', display: 'block' }}
+            <video
+              ref={videoRef}
+              playsInline muted
+              style={{
+                width: '100%', height: '100%',
+                objectFit: 'cover',
+                transform: 'scaleX(-1)', // mirror front camera
+              }}
             />
-            <div style={{
-              position: 'absolute', top: 12, right: 12,
-              background: theme.success, color: 'white',
-              borderRadius: 20, padding: '6px 14px',
-              fontSize: 12, fontWeight: 600,
-            }}>
-              Photo captured
-            </div>
+            {/* Pose guide overlay */}
+            <PoseGuide side={side} />
           </div>
 
-          <button
-            onClick={retake}
-            style={{
-              marginTop: 16, padding: '10px 24px',
-              background: 'transparent',
-              border: `2px solid ${theme.border}`,
-              borderRadius: 10, fontSize: 14, fontWeight: 600,
-              color: theme.textLight, cursor: 'pointer',
-            }}
-          >
-            Retake Photo
-          </button>
+          <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+          <div style={{ marginTop: 16, display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <button onClick={capture} style={{
+              padding: '14px 32px',
+              background: `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`,
+              color: 'white', border: 'none', borderRadius: 12,
+              fontSize: 16, fontWeight: 700, cursor: 'pointer',
+            }}>
+              Capture
+            </button>
+            <button onClick={stopCamera} style={retakeBtnStyle}>
+              Cancel
+            </button>
+          </div>
         </div>
-      ) : !cameraOpen ? (
-        // Show capture buttons
-        <div style={{ textAlign: 'center' }}>
+      ) : (
+        /* Pre-camera state */
+        <>
           <div style={{
             width: '100%', maxWidth: 360, margin: '0 auto',
             aspectRatio: '3/4', borderRadius: 16,
             background: '#f0ede8',
             display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            gap: 16,
+            alignItems: 'center', justifyContent: 'center', gap: 12,
+            position: 'relative', overflow: 'hidden',
           }}>
-            <div style={{ fontSize: 48, opacity: 0.3 }}>📸</div>
-            <div style={{ fontSize: 14, color: theme.textMuted, padding: '0 20px', textAlign: 'center' }}>
-              {sdkLoaded
-                ? 'Tap below to open the guided camera'
-                : sdkError
-                  ? sdkError
-                  : 'Loading camera...'}
+            <PoseGuide side={side} isStatic />
+            <div style={{ fontSize: 14, color: theme.textMuted, zIndex: 1 }}>
+              {cameraError || `Capture your ${label.toLowerCase()} angle`}
             </div>
           </div>
 
           <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
-            {/* Primary: Camera Kit */}
-            <button
-              onClick={openCamera}
-              disabled={!sdkLoaded}
-              style={{
-                width: '100%', maxWidth: 360, padding: '16px 24px',
-                background: sdkLoaded
-                  ? `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`
-                  : theme.border,
-                color: sdkLoaded ? 'white' : theme.textMuted,
-                border: 'none', borderRadius: 12,
-                fontSize: 16, fontWeight: 700,
-                cursor: sdkLoaded ? 'pointer' : 'not-allowed',
-              }}
-            >
-              {sdkLoaded ? 'Open Camera' : 'Loading Camera...'}
+            <button onClick={startCamera} style={{
+              width: '100%', maxWidth: 360, padding: '16px 24px',
+              background: `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`,
+              color: 'white', border: 'none', borderRadius: 12,
+              fontSize: 16, fontWeight: 700, cursor: 'pointer',
+            }}>
+              Open Camera
             </button>
 
-            {/* Fallback: file upload */}
             <button
               onClick={() => fileInputRef.current?.click()}
               style={{
                 width: '100%', maxWidth: 360, padding: '12px 24px',
-                background: 'transparent',
-                border: `2px solid ${theme.border}`,
+                background: 'transparent', border: `2px solid ${theme.border}`,
                 borderRadius: 12, fontSize: 14, fontWeight: 600,
                 color: theme.textLight, cursor: 'pointer',
               }}
@@ -330,49 +580,84 @@ export default function PhotoScreen({ photo, setPhoto }) {
               Or upload a photo
             </button>
             <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png"
-              capture="user"
-              onChange={handleFileUpload}
-              style={{ display: 'none' }}
+              ref={fileInputRef} type="file" accept="image/jpeg,image/png"
+              capture="user" onChange={handleFileUpload} style={{ display: 'none' }}
             />
+
+            {onSkip && (
+              <button onClick={onSkip} style={{
+                padding: '8px 20px', background: 'transparent', border: 'none',
+                fontSize: 13, color: theme.textMuted, cursor: 'pointer',
+                textDecoration: 'underline',
+              }}>
+                Skip this angle
+              </button>
+            )}
           </div>
-        </div>
-      ) : (
-        // Camera is open — SDK renders its own UI in #YMK-module
-        <div style={{ textAlign: 'center' }}>
-          {qualityStatus && (
-            <div style={{
-              marginTop: 16, padding: 12,
-              background: theme.surface, borderRadius: 10,
-              border: `1px solid ${theme.border}`,
-              fontSize: 13, color: theme.textLight,
-            }}>
-              <QualityIndicator quality={qualityStatus} />
-            </div>
-          )}
-          <button
-            onClick={() => {
-              window.YMK.close()
-              setCameraOpen(false)
-            }}
-            style={{
-              marginTop: 12, padding: '10px 24px',
-              background: 'transparent',
-              border: `2px solid ${theme.border}`,
-              borderRadius: 10, fontSize: 14, fontWeight: 600,
-              color: theme.textLight, cursor: 'pointer',
-            }}
-          >
-            Cancel
-          </button>
-        </div>
+        </>
       )}
     </div>
   )
 }
 
+
+// ─── Pose Guide Overlay ──────────────────────────────────────
+
+function PoseGuide({ side, isStatic }) {
+  // SVG silhouette showing the angle the patient should adopt.
+  // "left" means we want to see their LEFT cheek → they turn head to the right.
+  // "right" means we want to see their RIGHT cheek → they turn head to the left.
+  // The video is already mirrored via scaleX(-1), so we apply the visual
+  // rotation in the direction that looks correct to the patient.
+  const rotation = side === 'left' ? -35 : 35
+
+  return (
+    <div style={{
+      position: 'absolute',
+      inset: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      pointerEvents: 'none',
+      opacity: isStatic ? 0.12 : 0.25,
+    }}>
+      <svg viewBox="0 0 200 260" width="180" height="234" style={{ transform: `rotateY(${rotation}deg)` }}>
+        {/* Simple head + neck silhouette */}
+        <ellipse cx="100" cy="100" rx="65" ry="80"
+          fill="none" stroke="white" strokeWidth="2.5" strokeDasharray="6 4" />
+        <line x1="80" y1="175" x2="80" y2="230"
+          stroke="white" strokeWidth="2.5" strokeDasharray="6 4" />
+        <line x1="120" y1="175" x2="120" y2="230"
+          stroke="white" strokeWidth="2.5" strokeDasharray="6 4" />
+        {/* Center line for nose direction */}
+        <line x1="100" y1="60" x2="100" y2="140"
+          stroke="white" strokeWidth="1.5" strokeDasharray="4 6" opacity="0.5" />
+      </svg>
+    </div>
+  )
+}
+
+
+// ─── Shared Components ───────────────────────────────────────
+
+function PhotoPreview({ src, label }) {
+  return (
+    <div style={{
+      width: '100%', maxWidth: 360, margin: '0 auto',
+      borderRadius: 16, overflow: 'hidden',
+      border: `3px solid ${theme.success}`,
+      position: 'relative',
+    }}>
+      <img src={src} alt={label} style={{ width: '100%', display: 'block' }} />
+      <div style={{
+        position: 'absolute', top: 12, right: 12,
+        background: theme.success, color: 'white',
+        borderRadius: 20, padding: '6px 14px',
+        fontSize: 12, fontWeight: 600,
+      }}>
+        {label}
+      </div>
+    </div>
+  )
+}
 
 function QualityIndicator({ quality }) {
   const items = [
@@ -394,4 +679,11 @@ function QualityIndicator({ quality }) {
       ))}
     </div>
   )
+}
+
+const retakeBtnStyle = {
+  marginTop: 16, padding: '10px 24px',
+  background: 'transparent', border: `2px solid ${theme.border}`,
+  borderRadius: 10, fontSize: 14, fontWeight: 600,
+  color: theme.textLight, cursor: 'pointer',
 }

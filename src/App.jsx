@@ -195,7 +195,11 @@ export default function App() {
               togglePreviousTreatment={intake.togglePreviousTreatment} />
           )}
           {step === 6 && (
-            <PhotoScreen photo={intake.photoFront} setPhoto={intake.setPhotoFront} />
+            <PhotoScreen
+              photo={intake.photoFront} setPhoto={intake.setPhotoFront}
+              photoLeft={intake.photoLeft} setPhotoLeft={intake.setPhotoLeft}
+              photoRight={intake.photoRight} setPhotoRight={intake.setPhotoRight}
+            />
           )}
           {step === 7 && (
             <ConsentScreen consent={intake.consent}
