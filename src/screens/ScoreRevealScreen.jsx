@@ -155,7 +155,7 @@ export default function ScoreRevealScreen({ result, frontalPhoto }) {
 
 function FaceMapTab({ frontalPhoto, maskUrls, cvScores }) {
   const [activeConcern, setActiveConcern] = useState(null)
-  const [maskOpacity, setMaskOpacity] = useState(0.6)
+  const [maskOpacity, setMaskOpacity] = useState(1.0)
   const [maskLoadState, setMaskLoadState] = useState({})
   const [useFallback, setUseFallback] = useState({})
 

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { STEP_CONFIG } from './utils/constants'
 import { submitIntakeV2 } from './utils/api'
 import { useIntakeState } from './hooks/useIntakeState'
@@ -24,6 +24,13 @@ export default function App() {
   const [step, setStep] = useState(-1) // -1 = welcome
   const [phase, setPhase] = useState('intake') // intake | analyzing | score | done
   const [submitError, setSubmitError] = useState(null)
+
+  const scrollRef = useRef(null)
+
+  // Scroll to top when step changes
+  useEffect(() => {
+    scrollRef.current?.scrollTo(0, 0)
+  }, [step])
 
   const practice = usePractice()
   const { theme, slug, practiceName, logoUrl, loading: practiceLoading, showPoweredBy } = practice
@@ -143,7 +150,8 @@ export default function App() {
           </div>
         )}
         <BottomBar theme={theme}>
-          <PrimaryButton label="Continue" onClick={() => setPhase('done')} theme={theme} />
+          <PrimaryButton label="Continue" onClick={() => setPhase('done')} theme={theme}
+            style={{ padding: '12px 16px', fontSize: 14, borderRadius: 10 }} />
         </BottomBar>
         <PoweredByFooter theme={theme} show={showPoweredBy} />
       </div>
@@ -167,7 +175,7 @@ export default function App() {
     <div style={containerStyle}>
       <StepHeader step={step} totalSteps={TOTAL_STEPS} onBack={handleBack} canGoBack={step > 0} theme={theme} />
 
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' }}>
         <div style={{ padding: '20px 24px', paddingBottom: 120 }}>
           {step === 0 && (
             <PersonalInfoScreen personalInfo={intake.personalInfo} updatePersonalInfo={intake.updatePersonalInfo} />

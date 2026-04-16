@@ -427,10 +427,6 @@ function SideCapture({ side, label, instruction, image, onCapture, onRetake, onS
         audio: false,
       })
       streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-      }
       setCameraActive(true)
     } catch (err) {
       console.error('[SideCapture] Camera error:', err)
@@ -438,10 +434,23 @@ function SideCapture({ side, label, instruction, image, onCapture, onRetake, onS
     }
   }, [])
 
+  // Attach stream to video element once both are ready
+  useEffect(() => {
+    if (cameraActive && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current
+      videoRef.current.play().catch(err => {
+        console.error('[SideCapture] Video play failed:', err)
+      })
+    }
+  }, [cameraActive])
+
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop())
       streamRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
     }
     setCameraActive(false)
   }, [])
@@ -501,101 +510,99 @@ function SideCapture({ side, label, instruction, image, onCapture, onRetake, onS
         </div>
       </div>
 
-      {cameraActive ? (
-        /* Live viewfinder */
-        <div style={{ position: 'relative' }}>
-          <div style={{
-            width: '100%', maxWidth: 360, margin: '0 auto',
-            borderRadius: 16, overflow: 'hidden',
-            border: `2px solid ${theme.primary}`,
-            position: 'relative',
-            aspectRatio: '3/4',
-            background: '#000',
+      {/* Viewfinder — always mounted, toggled via display */}
+      <div style={{ display: cameraActive ? 'block' : 'none', position: 'relative' }}>
+        <div style={{
+          width: '100%', maxWidth: 360, margin: '0 auto',
+          borderRadius: 16, overflow: 'hidden',
+          border: `2px solid ${theme.primary}`,
+          position: 'relative',
+          aspectRatio: '3/4',
+          background: '#000',
+        }}>
+          <video
+            ref={videoRef}
+            playsInline muted autoPlay
+            style={{
+              width: '100%', height: '100%',
+              objectFit: 'cover',
+              transform: 'scaleX(-1)',
+            }}
+          />
+          <PoseGuide side={side} />
+        </div>
+
+        <div style={{ marginTop: 16, display: 'flex', gap: 12, justifyContent: 'center' }}>
+          <button onClick={capture} style={{
+            padding: '14px 32px',
+            background: `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`,
+            color: 'white', border: 'none', borderRadius: 12,
+            fontSize: 16, fontWeight: 700, cursor: 'pointer',
           }}>
-            <video
-              ref={videoRef}
-              playsInline muted
-              style={{
-                width: '100%', height: '100%',
-                objectFit: 'cover',
-                transform: 'scaleX(-1)', // mirror front camera
-              }}
-            />
-            {/* Pose guide overlay */}
-            <PoseGuide side={side} />
-          </div>
+            Capture
+          </button>
+          <button onClick={stopCamera} style={retakeBtnStyle}>
+            Cancel
+          </button>
+        </div>
+      </div>
 
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-          <div style={{ marginTop: 16, display: 'flex', gap: 12, justifyContent: 'center' }}>
-            <button onClick={capture} style={{
-              padding: '14px 32px',
-              background: `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`,
-              color: 'white', border: 'none', borderRadius: 12,
-              fontSize: 16, fontWeight: 700, cursor: 'pointer',
-            }}>
-              Capture
-            </button>
-            <button onClick={stopCamera} style={retakeBtnStyle}>
-              Cancel
-            </button>
+      {/* Pre-camera placeholder — hidden when camera is active */}
+      <div style={{ display: cameraActive ? 'none' : 'block' }}>
+        <div style={{
+          width: '100%', maxWidth: 360, margin: '0 auto',
+          aspectRatio: '3/4', borderRadius: 16,
+          background: '#f0ede8',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 12,
+          position: 'relative', overflow: 'hidden',
+        }}>
+          <PoseGuide side={side} isStatic />
+          <div style={{ fontSize: 14, color: theme.textMuted, zIndex: 1 }}>
+            {cameraError || `Capture your ${label.toLowerCase()} angle`}
           </div>
         </div>
-      ) : (
-        /* Pre-camera state */
-        <>
-          <div style={{
-            width: '100%', maxWidth: 360, margin: '0 auto',
-            aspectRatio: '3/4', borderRadius: 16,
-            background: '#f0ede8',
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 12,
-            position: 'relative', overflow: 'hidden',
+
+        <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+          <button onClick={startCamera} style={{
+            width: '100%', maxWidth: 360, padding: '16px 24px',
+            background: `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`,
+            color: 'white', border: 'none', borderRadius: 12,
+            fontSize: 16, fontWeight: 700, cursor: 'pointer',
           }}>
-            <PoseGuide side={side} isStatic />
-            <div style={{ fontSize: 14, color: theme.textMuted, zIndex: 1 }}>
-              {cameraError || `Capture your ${label.toLowerCase()} angle`}
-            </div>
-          </div>
+            Open Camera
+          </button>
 
-          <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
-            <button onClick={startCamera} style={{
-              width: '100%', maxWidth: 360, padding: '16px 24px',
-              background: `linear-gradient(135deg, ${theme.primary}, ${theme.primaryLight})`,
-              color: 'white', border: 'none', borderRadius: 12,
-              fontSize: 16, fontWeight: 700, cursor: 'pointer',
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              width: '100%', maxWidth: 360, padding: '12px 24px',
+              background: 'transparent', border: `2px solid ${theme.border}`,
+              borderRadius: 12, fontSize: 14, fontWeight: 600,
+              color: theme.textLight, cursor: 'pointer',
+            }}
+          >
+            Or upload a photo
+          </button>
+          <input
+            ref={fileInputRef} type="file" accept="image/jpeg,image/png"
+            capture="user" onChange={handleFileUpload} style={{ display: 'none' }}
+          />
+
+          {onSkip && (
+            <button onClick={onSkip} style={{
+              padding: '8px 20px', background: 'transparent', border: 'none',
+              fontSize: 13, color: theme.textMuted, cursor: 'pointer',
+              textDecoration: 'underline',
             }}>
-              Open Camera
+              Skip this angle
             </button>
+          )}
+        </div>
+      </div>
 
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                width: '100%', maxWidth: 360, padding: '12px 24px',
-                background: 'transparent', border: `2px solid ${theme.border}`,
-                borderRadius: 12, fontSize: 14, fontWeight: 600,
-                color: theme.textLight, cursor: 'pointer',
-              }}
-            >
-              Or upload a photo
-            </button>
-            <input
-              ref={fileInputRef} type="file" accept="image/jpeg,image/png"
-              capture="user" onChange={handleFileUpload} style={{ display: 'none' }}
-            />
-
-            {onSkip && (
-              <button onClick={onSkip} style={{
-                padding: '8px 20px', background: 'transparent', border: 'none',
-                fontSize: 13, color: theme.textMuted, cursor: 'pointer',
-                textDecoration: 'underline',
-              }}>
-                Skip this angle
-              </button>
-            )}
-          </div>
-        </>
-      )}
+      {/* Hidden canvas for capture — always mounted */}
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
     </div>
   )
 }
